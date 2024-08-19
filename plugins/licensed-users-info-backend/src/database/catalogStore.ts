@@ -10,7 +10,6 @@ export class CatalogEntityStore {
 
   async getUserEntities(): Promise<Map<string, Entity>> {
     const result = await this.database('final_entities').select('final_entity');
-    // console.log(`before filter ${result.length}`);
 
     const entityMap: Map<string, Entity> = result.reduce((map, row) => {
       const entity = JSON.parse(row.final_entity);
@@ -22,8 +21,6 @@ export class CatalogEntityStore {
       }
       return map;
     }, new Map());
-
-    // console.log(`Filtered Entity Map:`, entityMap.size);
 
     return entityMap;
   }

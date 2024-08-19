@@ -13,6 +13,7 @@ import {
 } from '../database/databaseUserInfoStore';
 import { CatalogEntityStore } from '../database/catalogStore';
 import { readBackstageTokenExpiration } from './readBackstageTokenExpiration';
+import { json2csv } from 'json-2-csv';
 
 export interface RouterOptions {
   logger: LoggerService;
@@ -22,10 +23,10 @@ export interface RouterOptions {
 
 export type UserInfoResponse = {
   // firstTimeLogin: string;
-  lastTimeLogin: string;
   userEntityRef: string;
   displayName?: string;
   email?: string;
+  lastTimeLogin: string;
 };
 
 export async function createRouter(
@@ -58,8 +59,7 @@ export async function createRouter(
     response.json({ quantity });
   });
 
-  // todo add ability return responce in csv format, not only json.
-  router.get('/users', async (_, response) => {
+  router.get('/users', async (request, response) => {
     const usersRow = await userInfoStore.getListUsers();
     const users = usersRow.map(userInfoRow =>
       rowToResponse(userInfoRow, tokenExpiration),
@@ -75,7 +75,20 @@ export async function createRouter(
       }
     }
 
-    response.json(users);
+    if (request.headers['content-type']?.includes('text/csv')) {
+      try {
+        const csv = await json2csv(users, {
+          keys: ['userEntityRef', 'displayName', 'email', 'lastTimeLogin'],
+        });
+        response.header('Content-Type', 'text/csv');
+        response.attachment('data.csv');
+        response.send(csv);
+      } catch (err) {
+        response.status(500).send('Error converting to CSV');
+      }
+    } else {
+      response.json(users);
+    }
   });
 
   const middleware = MiddlewareFactory.create({ logger, config });
