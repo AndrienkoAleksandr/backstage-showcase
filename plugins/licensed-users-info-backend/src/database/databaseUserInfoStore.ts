@@ -1,4 +1,7 @@
 import { Knex } from 'knex';
+import { readBackstageTokenExpiration } from '../service/readBackstageTokenExpiration';
+import { RootConfigService } from '@backstage/backend-plugin-api';
+import { UserInfoResponse } from '../service/router';
 
 export type UserInfoRow = {
   user_entity_ref: string;
@@ -6,45 +9,32 @@ export type UserInfoRow = {
   exp: Date;
 };
 
-// todo: move to the common package
-export type UserInfo = {
-  // firstTimeLogin: string;
-  // lastTimeLogin: string;
-  userEntityRef: string;
-};
-
 export class DatabaseUserInfoStore {
-  private readonly database: Knex;
-
-  constructor(database: Knex) {
+  constructor(
+    private readonly database: Knex,
+    private readonly config: RootConfigService,
+  ) {
     this.database = database;
   }
 
-  async getUserByReference(
-    _userEntityRef: string,
-  ): Promise<UserInfo | undefined> {
-    console.log(this.database.VERSION);
-    return undefined;
-    // const user = await this.database<UserInfoRow>('users').where('id', userId).first();
-    // if (!user) {
-    //   return undefined;
-    // }
-    // return {
-    //   id: user.id,
-    //   email: user.email,
-    //   displayName: user.display_name,
-    //   picture: user.picture,
-    // };
-  }
+  // async getUserByReference(
+  //   userEntityRef: string,
+  // ): Promise<UserInfoRow | undefined> {
+  //   return await this.database<UserInfoRow>('user_info').where('entity_ref', userEntityRef).first();
+  // }
 
-  async getListUsers(): Promise<UserInfo[]> {
+  async getListUsers(): Promise<UserInfoResponse[]> {
+    const tokenExpiration = readBackstageTokenExpiration(this.config);
     const userInfos = await this.database<UserInfoRow>('user_info');
     return userInfos.map(userInfo => ({
       userEntityRef: userInfo.user_entity_ref,
+      lastTimeLogin: new Date(
+        userInfo.exp.getTime() - tokenExpiration,
+      ).toUTCString(),
     }));
   }
 
-  async getQuantityUsers(): Promise<number> {
+  async getQuantityRecordedActiveUsers(): Promise<number> {
     // Perform the count query with an alias for the count result
     const result = await this.database<UserInfoRow>('user_info')
       .count<{ count: number }>('user_entity_ref as count')
