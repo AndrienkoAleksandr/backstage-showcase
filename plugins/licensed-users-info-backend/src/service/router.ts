@@ -7,7 +7,10 @@ import { LoggerService } from '@backstage/backend-plugin-api';
 import express from 'express';
 import Router from 'express-promise-router';
 import { DatabaseManager } from '@backstage/backend-defaults/database';
-import { DatabaseUserInfoStore } from '../database/databaseUserInfoStore';
+import {
+  DatabaseUserInfoStore,
+  UserInfoRow,
+} from '../database/databaseUserInfoStore';
 import { CatalogEntityStore } from '../database/catalogStore';
 import { readBackstageTokenExpiration } from './readBackstageTokenExpiration';
 
@@ -22,6 +25,7 @@ export type UserInfoResponse = {
   lastTimeLogin: string;
   userEntityRef: string;
   displayName?: string;
+  email?: string;
 };
 
 export async function createRouter(
@@ -30,7 +34,6 @@ export async function createRouter(
   const { logger, config } = options;
 
   const tokenExpiration = readBackstageTokenExpiration(config);
-  console.log(`===== Token expiration: ${tokenExpiration}`);
 
   const authDB = await DatabaseManager.fromConfig(options.config)
     .forPlugin('auth')
@@ -39,7 +42,7 @@ export async function createRouter(
     .forPlugin('catalog')
     .getClient();
 
-  const userInfoStore = new DatabaseUserInfoStore(authDB, config);
+  const userInfoStore = new DatabaseUserInfoStore(authDB);
   const catalogEntityStore = new CatalogEntityStore(catalogDB);
 
   const router = Router();
@@ -57,19 +60,18 @@ export async function createRouter(
 
   // todo add ability return responce in csv format, not only json.
   router.get('/users', async (_, response) => {
-    const users = await userInfoStore.getListUsers();
-    const userEntities = await catalogEntityStore.getUserEntities();
+    const usersRow = await userInfoStore.getListUsers();
+    const users = usersRow.map(userInfoRow =>
+      rowToResponse(userInfoRow, tokenExpiration),
+    );
 
+    const userEntities = await catalogEntityStore.getUserEntities();
     for (const userInfo of users) {
       const entity = userEntities.get(userInfo.userEntityRef);
-      if (
-        entity &&
-        entity.spec &&
-        entity.spec.profile &&
-        (entity.spec.profile as any).displayName
-      ) {
+      if (entity && entity.spec && entity.spec.profile) {
         userInfo.displayName = (entity.spec.profile as any)
           .displayName as string;
+        userInfo.email = (entity.spec.profile as any).email as string;
       }
     }
 
@@ -80,4 +82,16 @@ export async function createRouter(
 
   router.use(middleware.error());
   return router;
+}
+
+export function rowToResponse(
+  userInfoRow: UserInfoRow,
+  tokenExpiration: number,
+): UserInfoResponse {
+  return {
+    userEntityRef: userInfoRow.user_entity_ref,
+    lastTimeLogin: new Date(
+      userInfoRow.exp.getTime() - tokenExpiration,
+    ).toUTCString(),
+  };
 }

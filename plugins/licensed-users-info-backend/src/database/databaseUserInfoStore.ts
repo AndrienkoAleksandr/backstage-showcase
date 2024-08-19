@@ -1,7 +1,4 @@
 import { Knex } from 'knex';
-import { readBackstageTokenExpiration } from '../service/readBackstageTokenExpiration';
-import { RootConfigService } from '@backstage/backend-plugin-api';
-import { UserInfoResponse } from '../service/router';
 
 export type UserInfoRow = {
   user_entity_ref: string;
@@ -10,28 +7,10 @@ export type UserInfoRow = {
 };
 
 export class DatabaseUserInfoStore {
-  constructor(
-    private readonly database: Knex,
-    private readonly config: RootConfigService,
-  ) {
-    this.database = database;
-  }
+  constructor(private readonly database: Knex) {}
 
-  // async getUserByReference(
-  //   userEntityRef: string,
-  // ): Promise<UserInfoRow | undefined> {
-  //   return await this.database<UserInfoRow>('user_info').where('entity_ref', userEntityRef).first();
-  // }
-
-  async getListUsers(): Promise<UserInfoResponse[]> {
-    const tokenExpiration = readBackstageTokenExpiration(this.config);
-    const userInfos = await this.database<UserInfoRow>('user_info');
-    return userInfos.map(userInfo => ({
-      userEntityRef: userInfo.user_entity_ref,
-      lastTimeLogin: new Date(
-        userInfo.exp.getTime() - tokenExpiration,
-      ).toUTCString(),
-    }));
+  async getListUsers(): Promise<UserInfoRow[]> {
+    return await this.database<UserInfoRow>('user_info');
   }
 
   async getQuantityRecordedActiveUsers(): Promise<number> {
