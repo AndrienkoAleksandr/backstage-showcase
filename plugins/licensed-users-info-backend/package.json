@@ -26,9 +26,13 @@
     "@backstage/backend-common": "^0.23.3",
     "@backstage/backend-defaults": "^0.4.1",
     "@backstage/backend-plugin-api": "^0.7.0",
+    "@backstage/catalog-model": "1.5.0",
     "@backstage/config": "^1.2.0",
+    "@backstage/plugin-auth-backend": "^0.22.5",
+    "@backstage/types": "^1.1.1",
     "express": "^4.17.21",
     "express-promise-router": "^4.1.1",
+    "json-2-csv": "^5.5.5",
     "knex": "^3.0.0",
     "node-fetch": "^2.7.0"
   },
@@ -39,8 +43,8 @@
     "@backstage/plugin-auth-backend-module-guest-provider": "^0.1.8",
     "@types/express": "*",
     "@types/supertest": "^2.0.12",
-    "supertest": "^6.2.4",
-    "msw": "^2.3.1"
+    "msw": "^2.3.1",
+    "supertest": "^6.2.4"
   },
   "files": [
     "dist"

@@ -1,8 +1,5 @@
 import { MiddlewareFactory } from '@backstage/backend-defaults/rootHttpRouter';
-import {
-  DatabaseService,
-  RootConfigService,
-} from '@backstage/backend-plugin-api';
+import { RootConfigService } from '@backstage/backend-plugin-api';
 import { LoggerService } from '@backstage/backend-plugin-api';
 import express from 'express';
 import Router from 'express-promise-router';
@@ -18,7 +15,6 @@ import { json2csv } from 'json-2-csv';
 export interface RouterOptions {
   logger: LoggerService;
   config: RootConfigService;
-  database: DatabaseService;
 }
 
 export type UserInfoResponse = {

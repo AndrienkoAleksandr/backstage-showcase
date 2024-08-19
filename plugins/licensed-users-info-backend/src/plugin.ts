@@ -17,14 +17,12 @@ export const licensedUsersInfoPlugin = createBackendPlugin({
         httpRouter: coreServices.httpRouter,
         logger: coreServices.logger,
         config: coreServices.rootConfig,
-        database: coreServices.database,
       },
-      async init({ httpRouter, logger, config, database }) {
+      async init({ httpRouter, logger, config }) {
         httpRouter.use(
           await createRouter({
             logger,
             config,
-            database,
           }),
         );
         httpRouter.addAuthPolicy({
