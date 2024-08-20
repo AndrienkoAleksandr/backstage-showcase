@@ -1,5 +1,9 @@
 import { MiddlewareFactory } from '@backstage/backend-defaults/rootHttpRouter';
-import { RootConfigService } from '@backstage/backend-plugin-api';
+import {
+  AuthService,
+  DiscoveryService,
+  RootConfigService,
+} from '@backstage/backend-plugin-api';
 import { LoggerService } from '@backstage/backend-plugin-api';
 import express from 'express';
 import Router from 'express-promise-router';
@@ -8,13 +12,16 @@ import {
   DatabaseUserInfoStore,
   UserInfoRow,
 } from '../database/databaseUserInfoStore';
-import { CatalogEntityStore } from '../database/catalogStore';
+import { CatalogEntityStore } from './catalogStore';
 import { readBackstageTokenExpiration } from './readBackstageTokenExpiration';
 import { json2csv } from 'json-2-csv';
+import { CatalogClient } from '@backstage/catalog-client';
 
 export interface RouterOptions {
   logger: LoggerService;
   config: RootConfigService;
+  auth: AuthService;
+  discovery: DiscoveryService;
 }
 
 export type UserInfoResponse = {
@@ -28,25 +35,23 @@ export type UserInfoResponse = {
 export async function createRouter(
   options: RouterOptions,
 ): Promise<express.Router> {
-  const { logger, config } = options;
+  const { logger, config, auth, discovery } = options;
 
   const tokenExpiration = readBackstageTokenExpiration(config);
 
   const authDB = await DatabaseManager.fromConfig(options.config)
     .forPlugin('auth')
     .getClient();
-  const catalogDB = await DatabaseManager.fromConfig(options.config)
-    .forPlugin('catalog')
-    .getClient();
+
+  const catalogClient = new CatalogClient({ discoveryApi: discovery });
 
   const userInfoStore = new DatabaseUserInfoStore(authDB);
-  const catalogEntityStore = new CatalogEntityStore(catalogDB);
+  const catalogEntityStore = new CatalogEntityStore(catalogClient, auth);
 
   const router = Router();
   router.use(express.json());
 
   router.get('/health', (_, response) => {
-    logger.info('PONG!');
     response.json({ status: 'ok' });
   });
 
