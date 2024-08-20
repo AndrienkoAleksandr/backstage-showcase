@@ -13,6 +13,8 @@ describe('createRouter', () => {
       config: mockServices.rootConfig(),
       auth: mockServices.auth.mock(),
       discovery: mockServices.discovery.mock(),
+      permissions: mockServices.permissions.mock(),
+      httpAuth: mockServices.httpAuth.mock(),
     });
     app = express().use(router);
   });

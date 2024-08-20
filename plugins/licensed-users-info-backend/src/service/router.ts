@@ -1,7 +1,10 @@
 import { MiddlewareFactory } from '@backstage/backend-defaults/rootHttpRouter';
 import {
   AuthService,
+  BackstageCredentials,
   DiscoveryService,
+  HttpAuthService,
+  PermissionsService,
   RootConfigService,
 } from '@backstage/backend-plugin-api';
 import { LoggerService } from '@backstage/backend-plugin-api';
@@ -16,12 +19,17 @@ import { CatalogEntityStore } from './catalogStore';
 import { readBackstageTokenExpiration } from './readBackstageTokenExpiration';
 import { json2csv } from 'json-2-csv';
 import { CatalogClient } from '@backstage/catalog-client';
+import { NotAllowedError } from '@backstage/errors';
+import { AuthorizeResult } from '@backstage/plugin-permission-common';
+import { policyEntityReadPermission } from '@janus-idp/backstage-plugin-rbac-common';
 
 export interface RouterOptions {
   logger: LoggerService;
   config: RootConfigService;
   auth: AuthService;
   discovery: DiscoveryService;
+  permissions: PermissionsService;
+  httpAuth: HttpAuthService;
 }
 
 export type UserInfoResponse = {
@@ -35,7 +43,7 @@ export type UserInfoResponse = {
 export async function createRouter(
   options: RouterOptions,
 ): Promise<express.Router> {
-  const { logger, config, auth, discovery } = options;
+  const { logger, config, auth, discovery, permissions, httpAuth } = options;
 
   const tokenExpiration = readBackstageTokenExpiration(config);
 
@@ -55,12 +63,16 @@ export async function createRouter(
     response.json({ status: 'ok' });
   });
 
-  router.get('/users/quantity', async (_, response) => {
+  router.get('/users/quantity', async (request, response) => {
+    await permissionCheck(permissions, await httpAuth.credentials(request));
+
     const quantity = await userInfoStore.getQuantityRecordedActiveUsers();
     response.json({ quantity });
   });
 
   router.get('/users', async (request, response) => {
+    await permissionCheck(permissions, await httpAuth.credentials(request));
+
     const usersRow = await userInfoStore.getListUsers();
     const users = usersRow.map(userInfoRow =>
       rowToResponse(userInfoRow, tokenExpiration),
@@ -108,4 +120,27 @@ export function rowToResponse(
       userInfoRow.exp.getTime() - tokenExpiration,
     ).toUTCString(),
   };
+}
+
+export async function permissionCheck(
+  permissions: PermissionsService,
+  credentials: BackstageCredentials,
+) {
+  const decision = (
+    await permissions.authorize(
+      [
+        {
+          permission: policyEntityReadPermission,
+          resourceRef: policyEntityReadPermission.resourceType,
+        },
+      ],
+      {
+        credentials,
+      },
+    )
+  )[0];
+
+  if (decision.result === AuthorizeResult.DENY) {
+    throw new NotAllowedError('Unauthorized');
+  }
 }
