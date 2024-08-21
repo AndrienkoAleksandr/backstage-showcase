@@ -2,20 +2,22 @@ import { Knex } from 'knex';
 
 export type UserInfoRow = {
   user_entity_ref: string;
-  user_info: string;
-  exp: Date;
+  first_recorded_login_at: Date;
+  last_recorded_login_at: Date;
 };
+
+const USER_STATISTICS_TABLE_NAME = 'user_statistics';
 
 export class DatabaseUserInfoStore {
   constructor(private readonly database: Knex) {}
 
   async getListUsers(): Promise<UserInfoRow[]> {
-    return await this.database<UserInfoRow>('user_info');
+    return await this.database<UserInfoRow>(USER_STATISTICS_TABLE_NAME);
   }
 
   async getQuantityRecordedActiveUsers(): Promise<number> {
     // Perform the count query with an alias for the count result
-    const result = await this.database<UserInfoRow>('user_info')
+    const result = await this.database<UserInfoRow>(USER_STATISTICS_TABLE_NAME)
       .count<{ count: number }>('user_entity_ref as count')
       .first();
 

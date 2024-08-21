@@ -1,7 +1,7 @@
-// import { MiddlewareFactory } from '@backstage/backend-defaults/rootHttpRouter';
 import {
   AuthService,
   BackstageCredentials,
+  DatabaseService,
   DiscoveryService,
   HttpAuthService,
   PermissionsService,
@@ -11,13 +11,11 @@ import {
 import { LoggerService } from '@backstage/backend-plugin-api';
 import express from 'express';
 import Router from 'express-promise-router';
-import { DatabaseManager } from '@backstage/backend-defaults/database';
 import {
   DatabaseUserInfoStore,
   UserInfoRow,
 } from '../database/databaseUserInfoStore';
 import { CatalogEntityStore } from './catalogStore';
-import { readBackstageTokenExpiration } from './readBackstageTokenExpiration';
 import { json2csv } from 'json-2-csv';
 import { CatalogClient } from '@backstage/catalog-client';
 import { NotAllowedError } from '@backstage/errors';
@@ -27,9 +25,9 @@ import {
   createRouter as authCreateRouter,
   ProviderFactories,
 } from '@backstage/plugin-auth-backend';
-import { PluginDatabaseManager } from '@backstage/backend-common';
 import { CatalogApi } from '@backstage/catalog-client';
 import { AuthOwnershipResolver } from '@backstage/plugin-auth-node';
+import { migrate } from '../database/migration';
 
 export interface RouterOptions {
   logger: LoggerService;
@@ -38,7 +36,7 @@ export interface RouterOptions {
   discovery: DiscoveryService;
   permissions: PermissionsService;
   httpAuth: HttpAuthService;
-  database: PluginDatabaseManager;
+  database: DatabaseService;
   tokenManager: TokenManagerService;
   disableDefaultProviderFactories: true;
   providerFactories?: ProviderFactories;
@@ -47,10 +45,10 @@ export interface RouterOptions {
 }
 
 export type UserInfoResponse = {
-  // firstTimeLogin: string;
   userEntityRef: string;
   displayName?: string;
   email?: string;
+  firstTimeLogin: string;
   lastTimeLogin: string;
 };
 
@@ -72,15 +70,11 @@ export async function createRouter(
     ownershipResolver,
   } = options;
 
-  const tokenExpiration = readBackstageTokenExpiration(config);
+  await migrate(database);
 
-  const authDB = await DatabaseManager.fromConfig(options.config)
-    .forPlugin('auth')
-    .getClient();
+  const userInfoStore = new DatabaseUserInfoStore(await database.getClient());
 
   const catalogClient = new CatalogClient({ discoveryApi: discovery });
-
-  const userInfoStore = new DatabaseUserInfoStore(authDB);
   const catalogEntityStore = new CatalogEntityStore(catalogClient, auth);
 
   const router = Router();
@@ -96,9 +90,7 @@ export async function createRouter(
     await permissionCheck(permissions, await httpAuth.credentials(request));
 
     const usersRow = await userInfoStore.getListUsers();
-    const users = usersRow.map(userInfoRow =>
-      rowToResponse(userInfoRow, tokenExpiration),
-    );
+    const users = usersRow.map(userInfoRow => rowToResponse(userInfoRow));
 
     const userEntities = await catalogEntityStore.getUserEntities();
     for (const userInfo of users) {
@@ -126,6 +118,9 @@ export async function createRouter(
     }
   });
 
+  // We need to make migrations upper in the frame of this plugin and don't allow migration from auth plugin.
+  // Because auth plugin doesn't have our migration scripts and it will fail knex migration lock.
+  database.migrations = { skip: true };
   const authRoter = await authCreateRouter({
     logger,
     database,
@@ -145,14 +140,14 @@ export async function createRouter(
   return router;
 }
 
-export function rowToResponse(
-  userInfoRow: UserInfoRow,
-  tokenExpiration: number,
-): UserInfoResponse {
+export function rowToResponse(userInfoRow: UserInfoRow): UserInfoResponse {
   return {
     userEntityRef: userInfoRow.user_entity_ref,
+    firstTimeLogin: new Date(
+      userInfoRow.first_recorded_login_at.getTime(),
+    ).toUTCString(),
     lastTimeLogin: new Date(
-      userInfoRow.exp.getTime() - tokenExpiration,
+      userInfoRow.last_recorded_login_at.getTime(),
     ).toUTCString(),
   };
 }
