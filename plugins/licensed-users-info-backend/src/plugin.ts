@@ -3,6 +3,14 @@ import {
   createBackendPlugin,
 } from '@backstage/backend-plugin-api';
 import { createRouter } from './service/router';
+import {
+  authOwnershipResolutionExtensionPoint,
+  AuthOwnershipResolver,
+  AuthProviderFactory,
+  authProvidersExtensionPoint,
+} from '@backstage/plugin-auth-node';
+import { catalogServiceRef } from '@backstage/plugin-catalog-node/alpha';
+import { signInWrapper } from './service/authProviderFactoryWrapper';
 
 /**
  * licensedUsersInfoPlugin backend plugin
@@ -10,8 +18,31 @@ import { createRouter } from './service/router';
  * @public
  */
 export const licensedUsersInfoPlugin = createBackendPlugin({
-  pluginId: 'licensed-users-info',
+  pluginId: 'auth',
   register(env) {
+    const providers = new Map<string, AuthProviderFactory>();
+    let ownershipResolver: AuthOwnershipResolver | undefined = undefined;
+
+    env.registerExtensionPoint(authProvidersExtensionPoint, {
+      registerProvider({ providerId, factory }) {
+        if (providers.has(providerId)) {
+          throw new Error(
+            `Auth provider '${providerId}' was already registered`,
+          );
+        }
+        providers.set(providerId, factory);
+      },
+    });
+
+    env.registerExtensionPoint(authOwnershipResolutionExtensionPoint, {
+      setAuthOwnershipResolver(resolver) {
+        if (ownershipResolver) {
+          throw new Error('Auth ownership resolver is already set');
+        }
+        ownershipResolver = resolver;
+      },
+    });
+
     env.registerInit({
       deps: {
         httpRouter: coreServices.httpRouter,
@@ -21,6 +52,9 @@ export const licensedUsersInfoPlugin = createBackendPlugin({
         discovery: coreServices.discovery,
         permissions: coreServices.permissions,
         httpAuth: coreServices.httpAuth,
+        database: coreServices.database,
+        tokenManager: coreServices.tokenManager,
+        catalogApi: catalogServiceRef,
       },
       async init({
         httpRouter,
@@ -30,6 +64,9 @@ export const licensedUsersInfoPlugin = createBackendPlugin({
         discovery,
         permissions,
         httpAuth,
+        database,
+        tokenManager,
+        catalogApi,
       }) {
         httpRouter.use(
           await createRouter({
@@ -39,10 +76,21 @@ export const licensedUsersInfoPlugin = createBackendPlugin({
             discovery,
             permissions,
             httpAuth,
+            database,
+            tokenManager,
+            providerFactories: Object.fromEntries(
+              Array.from(providers.entries(), ([key, providerFactory]) => [
+                key,
+                signInWrapper(providerFactory),
+              ]),
+            ),
+            disableDefaultProviderFactories: true,
+            catalogApi,
+            ownershipResolver,
           }),
         );
         httpRouter.addAuthPolicy({
-          path: '/health',
+          path: '/',
           allow: 'unauthenticated',
         });
       },

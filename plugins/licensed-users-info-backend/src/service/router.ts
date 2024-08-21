@@ -1,4 +1,4 @@
-import { MiddlewareFactory } from '@backstage/backend-defaults/rootHttpRouter';
+// import { MiddlewareFactory } from '@backstage/backend-defaults/rootHttpRouter';
 import {
   AuthService,
   BackstageCredentials,
@@ -6,6 +6,7 @@ import {
   HttpAuthService,
   PermissionsService,
   RootConfigService,
+  TokenManagerService,
 } from '@backstage/backend-plugin-api';
 import { LoggerService } from '@backstage/backend-plugin-api';
 import express from 'express';
@@ -22,6 +23,13 @@ import { CatalogClient } from '@backstage/catalog-client';
 import { NotAllowedError } from '@backstage/errors';
 import { AuthorizeResult } from '@backstage/plugin-permission-common';
 import { policyEntityReadPermission } from '@janus-idp/backstage-plugin-rbac-common';
+import {
+  createRouter as authCreateRouter,
+  ProviderFactories,
+} from '@backstage/plugin-auth-backend';
+import { PluginDatabaseManager } from '@backstage/backend-common';
+import { CatalogApi } from '@backstage/catalog-client';
+import { AuthOwnershipResolver } from '@backstage/plugin-auth-node';
 
 export interface RouterOptions {
   logger: LoggerService;
@@ -30,6 +38,12 @@ export interface RouterOptions {
   discovery: DiscoveryService;
   permissions: PermissionsService;
   httpAuth: HttpAuthService;
+  database: PluginDatabaseManager;
+  tokenManager: TokenManagerService;
+  disableDefaultProviderFactories: true;
+  providerFactories?: ProviderFactories;
+  catalogApi: CatalogApi;
+  ownershipResolver: AuthOwnershipResolver | undefined;
 }
 
 export type UserInfoResponse = {
@@ -43,7 +57,20 @@ export type UserInfoResponse = {
 export async function createRouter(
   options: RouterOptions,
 ): Promise<express.Router> {
-  const { logger, config, auth, discovery, permissions, httpAuth } = options;
+  const {
+    logger,
+    database,
+    config,
+    auth,
+    discovery,
+    permissions,
+    httpAuth,
+    tokenManager,
+    disableDefaultProviderFactories,
+    providerFactories,
+    catalogApi,
+    ownershipResolver,
+  } = options;
 
   const tokenExpiration = readBackstageTokenExpiration(config);
 
@@ -57,20 +84,15 @@ export async function createRouter(
   const catalogEntityStore = new CatalogEntityStore(catalogClient, auth);
 
   const router = Router();
-  router.use(express.json());
 
-  router.get('/health', (_, response) => {
-    response.json({ status: 'ok' });
-  });
-
-  router.get('/users/quantity', async (request, response) => {
+  router.get('/statistics/users/quantity', async (request, response) => {
     await permissionCheck(permissions, await httpAuth.credentials(request));
 
     const quantity = await userInfoStore.getQuantityRecordedActiveUsers();
     response.json({ quantity });
   });
 
-  router.get('/users', async (request, response) => {
+  router.get('/statistics/users', async (request, response) => {
     await permissionCheck(permissions, await httpAuth.credentials(request));
 
     const usersRow = await userInfoStore.getListUsers();
@@ -104,9 +126,22 @@ export async function createRouter(
     }
   });
 
-  const middleware = MiddlewareFactory.create({ logger, config });
+  const authRoter = await authCreateRouter({
+    logger,
+    database,
+    config,
+    discovery,
+    tokenManager,
+    auth,
+    httpAuth,
+    providerFactories,
+    disableDefaultProviderFactories,
+    catalogApi,
+    ownershipResolver,
+  });
 
-  router.use(middleware.error());
+  router.use(authRoter);
+
   return router;
 }
 

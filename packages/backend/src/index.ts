@@ -106,11 +106,11 @@ backend.add(
 backend.add(pluginIDProviderService);
 backend.add(rbacDynamicPluginsProvider);
 
-backend.add(import('@backstage/plugin-auth-backend'));
 backend.add(import('@backstage/plugin-auth-backend-module-guest-provider'));
 backend.add(import('./modules/authProvidersModule'));
 
 backend.add(import('@internal/plugin-dynamic-plugins-info-backend'));
 backend.add(import('@internal/plugin-scalprum-backend'));
 
+backend.add(import('@internal/backstage-plugin-licensed-users-info-backend'));
 backend.start();
