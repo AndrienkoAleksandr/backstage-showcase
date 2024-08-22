@@ -10,7 +10,8 @@ import {
   authProvidersExtensionPoint,
 } from '@backstage/plugin-auth-node';
 import { catalogServiceRef } from '@backstage/plugin-catalog-node/alpha';
-import { signInWrapper } from './service/authProviderFactoryWrapper';
+import { customAuthProviderHandlers } from './service/authProviderFactoryWrapper';
+import { DatabaseUserInfoStore } from './database/databaseUserInfoStore';
 
 /**
  * licensedUsersInfoPlugin backend plugin
@@ -55,6 +56,7 @@ export const licensedUsersInfoPlugin = createBackendPlugin({
         database: coreServices.database,
         tokenManager: coreServices.tokenManager,
         catalogApi: catalogServiceRef,
+        identity: coreServices.identity,
       },
       async init({
         httpRouter,
@@ -67,7 +69,10 @@ export const licensedUsersInfoPlugin = createBackendPlugin({
         database,
         tokenManager,
         catalogApi,
+        identity,
       }) {
+        const knex = await database.getClient();
+        const userInfoStore = new DatabaseUserInfoStore(knex);
         httpRouter.use(
           await createRouter({
             logger,
@@ -78,15 +83,16 @@ export const licensedUsersInfoPlugin = createBackendPlugin({
             httpAuth,
             database,
             tokenManager,
-            providerFactories: Object.fromEntries(
-              Array.from(providers.entries(), ([key, providerFactory]) => [
-                key,
-                signInWrapper(providerFactory),
-              ]),
+            providerFactories: customAuthProviderHandlers(
+              providers,
+              userInfoStore,
+              identity,
+              httpAuth,
             ),
             disableDefaultProviderFactories: true,
             catalogApi,
             ownershipResolver,
+            userInfoStore,
           }),
         );
         httpRouter.addAuthPolicy({

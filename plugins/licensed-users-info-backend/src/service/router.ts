@@ -42,6 +42,7 @@ export interface RouterOptions {
   providerFactories?: ProviderFactories;
   catalogApi: CatalogApi;
   ownershipResolver: AuthOwnershipResolver | undefined;
+  userInfoStore: DatabaseUserInfoStore;
 }
 
 export type UserInfoResponse = {
@@ -68,11 +69,10 @@ export async function createRouter(
     providerFactories,
     catalogApi,
     ownershipResolver,
+    userInfoStore,
   } = options;
 
   await migrate(database);
-
-  const userInfoStore = new DatabaseUserInfoStore(await database.getClient());
 
   const catalogClient = new CatalogClient({ discoveryApi: discovery });
   const catalogEntityStore = new CatalogEntityStore(catalogClient, auth);

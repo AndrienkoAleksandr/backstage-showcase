@@ -11,6 +11,18 @@ const USER_STATISTICS_TABLE_NAME = 'user_statistics';
 export class DatabaseUserInfoStore {
   constructor(private readonly database: Knex) {}
 
+  async addUserLogInInfo(userInfo: UserInfoRow) {
+    console.log('==== Inserting data...');
+    try {
+      await this.database<UserInfoRow>(USER_STATISTICS_TABLE_NAME).insert(
+        userInfo,
+      );
+      console.log('==== Data inserted successfully.');
+    } catch (err) {
+      console.error('==== Error inserting data.', err);
+    }
+  }
+
   async getListUsers(): Promise<UserInfoRow[]> {
     return await this.database<UserInfoRow>(USER_STATISTICS_TABLE_NAME);
   }
