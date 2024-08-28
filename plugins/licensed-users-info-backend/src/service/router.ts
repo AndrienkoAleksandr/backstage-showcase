@@ -1,4 +1,3 @@
-import { MiddlewareFactory } from '@backstage/backend-defaults/rootHttpRouter';
 import {
   AuthService,
   BackstageCredentials,
@@ -7,10 +6,10 @@ import {
   LoggerService,
   PermissionsService,
   RootConfigService,
+  TokenManagerService,
 } from '@backstage/backend-plugin-api';
 import express from 'express';
 import Router from 'express-promise-router';
-import { DatabaseManager } from '@backstage/backend-defaults/database';
 import {
   DatabaseUserInfoStore,
   UserInfoRow,
@@ -22,6 +21,13 @@ import { CatalogClient } from '@backstage/catalog-client';
 import { NotAllowedError } from '@backstage/errors';
 import { AuthorizeResult } from '@backstage/plugin-permission-common';
 import { policyEntityReadPermission } from '@janus-idp/backstage-plugin-rbac-common';
+import {
+  createRouter as authCreateRouter,
+  ProviderFactories,
+} from '@backstage/plugin-auth-backend';
+import { PluginDatabaseManager } from '@backstage/backend-common';
+import { CatalogApi } from '@backstage/catalog-client';
+import { AuthOwnershipResolver } from '@backstage/plugin-auth-node';
 import { DateTime } from 'luxon';
 
 export interface RouterOptions {
@@ -31,6 +37,12 @@ export interface RouterOptions {
   discovery: DiscoveryService;
   permissions: PermissionsService;
   httpAuth: HttpAuthService;
+  database: PluginDatabaseManager;
+  tokenManager: TokenManagerService;
+  disableDefaultProviderFactories: true;
+  providerFactories?: ProviderFactories;
+  catalogApi: CatalogApi;
+  ownershipResolver: AuthOwnershipResolver | undefined;
 }
 
 export type UserInfoResponse = {
@@ -44,28 +56,29 @@ export type UserInfoResponse = {
 export async function createRouter(
   options: RouterOptions,
 ): Promise<express.Router> {
-  const { logger, config, auth, discovery, permissions, httpAuth } = options;
+  const {
+    logger,
+    database,
+    config,
+    auth,
+    discovery,
+    permissions,
+    httpAuth,
+    tokenManager,
+    disableDefaultProviderFactories,
+    providerFactories,
+    catalogApi,
+    ownershipResolver,
+  } = options;
 
   const tokenExpiration = readBackstageTokenExpiration(config);
 
-  const authDB = await DatabaseManager.fromConfig(options.config)
-    .forPlugin('auth')
-    .getClient();
-
   const catalogClient = new CatalogClient({ discoveryApi: discovery });
 
-  const userInfoStore = new DatabaseUserInfoStore(authDB);
+  const userInfoStore = new DatabaseUserInfoStore(await database.getClient());
   const catalogEntityStore = new CatalogEntityStore(catalogClient, auth);
 
   const router = Router();
-  router.use(express.json());
-
-  if (await isSqliteInMemory(config)) {
-    logger.warn(
-      `The plugin-licensed-users-info-backend was disabled because it does not support the SQLite in-memory database configuration.`,
-    );
-    return router;
-  }
 
   router.get('/health', (_, response) => {
     response.json({ status: 'ok' });
@@ -112,9 +125,22 @@ export async function createRouter(
     }
   });
 
-  const middleware = MiddlewareFactory.create({ logger, config });
+  const authRoter = await authCreateRouter({
+    logger,
+    database,
+    config,
+    discovery,
+    tokenManager,
+    auth,
+    httpAuth,
+    providerFactories,
+    disableDefaultProviderFactories,
+    catalogApi,
+    ownershipResolver,
+  });
 
-  router.use(middleware.error());
+  router.use(authRoter);
+
   return router;
 }
 
@@ -169,22 +195,4 @@ export async function permissionCheck(
   if (decision.result === AuthorizeResult.DENY) {
     throw new NotAllowedError('Unauthorized');
   }
-}
-
-async function isSqliteInMemory(config: RootConfigService): Promise<boolean> {
-  const databaseConfig = config.getOptionalConfig('backend.database');
-  const dbClient = databaseConfig?.getOptionalString('client');
-
-  const isSqlite =
-    dbClient && (dbClient === 'sqlite3' || dbClient === 'better-sqlite3');
-
-  const connection = databaseConfig?.getOptional('connection')?.valueOf();
-  const isDirectoryStorageEnabled =
-    typeof connection === 'object' &&
-    Object.keys(connection).includes('directory');
-  if (isSqlite && !isDirectoryStorageEnabled) {
-    return true;
-  }
-
-  return false;
 }
