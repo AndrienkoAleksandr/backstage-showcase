@@ -106,7 +106,6 @@ backend.add(
 backend.add(pluginIDProviderService);
 backend.add(rbacDynamicPluginsProvider);
 
-backend.add(import('@backstage/plugin-auth-backend'));
 backend.add(import('@backstage/plugin-auth-backend-module-guest-provider'));
 backend.add(import('./modules/authProvidersModule'));
 
